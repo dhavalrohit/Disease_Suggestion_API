@@ -49,7 +49,9 @@ def synonyms(term):
     return synonym_set
 
 # ------------------- Load Dataset -------------------
-CSV_PATH = r"Dataset\diseasesymp_updated.csv"
+#CSV_PATH = r"Dataset\diseasesymp_updated.csv"--Windows
+CSV_PATH = "Dataset/diseasesymp_updated.csv"    #Linux/Unix
+
 
 # Use latin1 to avoid UnicodeDecodeError
 df = pd.read_csv(CSV_PATH, encoding='latin1')

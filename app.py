@@ -33,7 +33,10 @@ app = Flask(__name__)
 #nltk.download('stopwords')
 
 # ------------------- NLTK Setup -------------------
-nltk_data_dir = Path.home() / "nltk_data"
+
+
+BASE_DIR = Path(__file__).resolve().parent
+nltk_data_dir = BASE_DIR / "nltk_data"
 nltk.data.path.append(str(nltk_data_dir))
 
 # Force offline check — skip network downloads

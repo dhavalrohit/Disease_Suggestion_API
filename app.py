@@ -19,12 +19,36 @@ from Treatment import diseaseDetail
 import os
 import nltk
 from pathlib import Path
+import logging
+from datetime import datetime
+
+# ------------------- Logging Setup -------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+
+logger = logging.getLogger(__name__)
+
 
 
 warnings.simplefilter("ignore")
 
 # ------------------- Flask App -------------------
 app = Flask(__name__)
+
+@app.before_request
+def log_request_info():
+    logger.info(f"  Received {request.method} {request.path}")
+    if request.is_json:
+        logger.info(f"  Request JSON: {request.get_json()}")
+    else:
+        logger.info(" Request has no JSON body")
+
+@app.after_request
+def log_response_info(response):
+    logger.info(f" Responded {response.status} for {request.path}")
+    return response
 
 
 # ------------------- NLTK Setup -------------------
@@ -200,6 +224,10 @@ def receive_data():
         "rows_added": len(new_rows),
         "received_data": data
     })
+
+
+
+
 
 # ------------------- Run App -------------------
 if __name__ == "__main__":

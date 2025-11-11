@@ -18,16 +18,34 @@ from sklearn.preprocessing import LabelEncoder
 from Treatment import diseaseDetail
 import os
 import nltk
+from pathlib import Path
+
 
 warnings.simplefilter("ignore")
 
 # ------------------- Flask App -------------------
 app = Flask(__name__)
 
+
 # ------------------- NLTK Setup -------------------
-nltk.download('punkt')
-nltk.download('wordnet')
-nltk.download('stopwords')
+#nltk.download('punkt')
+#nltk.download('wordnet')
+#nltk.download('stopwords')
+
+# ------------------- NLTK Setup -------------------
+nltk_data_dir = Path.home() / "nltk_data"
+nltk.data.path.append(str(nltk_data_dir))
+
+def ensure_nltk_downloaded():
+    required = ["punkt", "wordnet", "stopwords"]
+    for pkg in required:
+        try:
+            nltk.data.find(f"tokenizers/{pkg}" if pkg == "punkt" else f"corpora/{pkg}")
+        except LookupError:
+            nltk.download(pkg, download_dir=str(nltk_data_dir))
+
+ensure_nltk_downloaded()
+
 
 stop_words = stopwords.words('english')
 lemmatizer = WordNetLemmatizer()
@@ -50,7 +68,10 @@ def synonyms(term):
 
 # ------------------- Load Dataset -------------------
 #CSV_PATH = r"Dataset\diseasesymp_updated.csv"--Windows
-CSV_PATH = "Dataset/diseasesymp_updated.csv"    #Linux/Unix
+#CSV_PATH = "Dataset/diseasesymp_updated.csv"    #Linux/Unix
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CSV_PATH = os.path.join(BASE_DIR, "Dataset", "diseasesymp_updated.csv")
+
 
 
 # Use latin1 to avoid UnicodeDecodeError

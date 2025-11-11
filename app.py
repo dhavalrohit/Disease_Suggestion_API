@@ -36,15 +36,14 @@ app = Flask(__name__)
 nltk_data_dir = Path.home() / "nltk_data"
 nltk.data.path.append(str(nltk_data_dir))
 
-def ensure_nltk_downloaded():
-    required = ["punkt", "wordnet", "stopwords"]
-    for pkg in required:
-        try:
-            nltk.data.find(f"tokenizers/{pkg}" if pkg == "punkt" else f"corpora/{pkg}")
-        except LookupError:
-            nltk.download(pkg, download_dir=str(nltk_data_dir))
-
-ensure_nltk_downloaded()
+# Force offline check — skip network downloads
+try:
+    nltk.data.find('tokenizers/punkt')
+    nltk.data.find('corpora/wordnet')
+    nltk.data.find('corpora/stopwords')
+except LookupError as e:
+    print(f"Missing NLTK data: {e}")
+    raise RuntimeError("Run nltk.download() manually once with internet access.")
 
 
 stop_words = stopwords.words('english')

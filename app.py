@@ -35,19 +35,27 @@ app = Flask(__name__)
 # ------------------- NLTK Setup -------------------
 
 
+# Set NLTK data path to local folder (for offline use)
 BASE_DIR = Path(__file__).resolve().parent
 nltk_data_dir = BASE_DIR / "nltk_data"
 nltk.data.path.append(str(nltk_data_dir))
 
-# Force offline check — skip network downloads
+# Verify NLTK resources exist locally
 try:
     nltk.data.find('tokenizers/punkt')
     nltk.data.find('corpora/wordnet')
     nltk.data.find('corpora/stopwords')
 except LookupError as e:
     print(f"Missing NLTK data: {e}")
-    raise RuntimeError("Run nltk.download() manually once with internet access.")
+    raise RuntimeError(
+        "Required NLTK data not found. Please unzip/download "
+        "punkt, wordnet, and stopwords into nltk_data before running."
+    )
 
+# Initialize tools
+from nltk.corpus import wordnet, stopwords
+from nltk.stem import WordNetLemmatizer
+from nltk.tokenize import RegexpTokenizer
 
 stop_words = stopwords.words('english')
 lemmatizer = WordNetLemmatizer()
@@ -77,7 +85,12 @@ CSV_PATH = os.path.join(BASE_DIR, "Dataset", "diseasesymp_updated.csv")
 
 
 # Use latin1 to avoid UnicodeDecodeError
-df = pd.read_csv(CSV_PATH, encoding='latin1')
+#df = pd.read_csv(CSV_PATH, encoding='latin1')
+if os.path.exists(CSV_PATH):
+    df = pd.read_csv(CSV_PATH, encoding='latin1')
+else:
+    raise FileNotFoundError(f"Dataset not found at {CSV_PATH}")
+
 
 # ------------------- Prepare Model -------------------
 X = df.drop(columns=["label_dis"])

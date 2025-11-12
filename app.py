@@ -179,7 +179,11 @@ def predict():
             sample_x[dataset_symptoms.index(val)] = 1
 
     # Step 5: Predict top 5 diseases
-    prediction = lr_model.predict_proba([sample_x])[0]
+    # Step 5: Predict top 5 diseases with normalized high-confidence probabilities
+    input_df = pd.DataFrame([sample_x], columns=dataset_symptoms)
+    prediction = lr_model.predict_proba(input_df)[0]# Step 5: Predict top 5 diseases with normalized high-confidence probabilities
+    input_df = pd.DataFrame([sample_x], columns=dataset_symptoms)
+    prediction = lr_model.predict_proba(input_df)[0]
     k = 5
     diseases = encoder.classes_
     topk = prediction.argsort()[-k:][::-1]
@@ -292,11 +296,11 @@ def receive_data():
         logger.info(" Retraining already in progress — new data queued for next cycle.")
 
     return jsonify({
-        "status": "accepted",
+        "status": "success",
         "rows_added": len(new_rows),
         "normalized_symptoms": normalized_symptoms,
         "message": "Data saved. Model retraining in background."
-    }), 202
+    })
 
 # ------------------- Health Check -------------------
 @app.route('/', methods=['GET'])

@@ -219,15 +219,6 @@ def receive_data():
     df.to_csv(temp_path, index=False, encoding='latin1')
     os.replace(temp_path, CSV_PATH)
 
-    global df, lr_model, encoder, dataset_symptoms
-    df = pd.read_csv(CSV_PATH, encoding='latin1')
-    X = df.drop(columns=["label_dis"])
-    Y = df["label_dis"]
-    encoder = LabelEncoder()
-    Y = encoder.fit_transform(Y)
-    lr_model = LogisticRegression(max_iter=200)
-    lr_model.fit(X, Y)
-    dataset_symptoms = list(X.columns)
     
     return jsonify({
         "status": "success",

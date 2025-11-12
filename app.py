@@ -1,5 +1,4 @@
 from flask import Flask, request, jsonify
-import warnings
 import pandas as pd
 import joblib
 from sklearn.linear_model import LogisticRegression
@@ -11,6 +10,8 @@ from nltk.stem import WordNetLemmatizer
 from nltk.tokenize import RegexpTokenizer
 import logging
 from pathlib import Path
+import threading
+import time
 
 # ------------------- Flask App -------------------
 app = Flask(__name__)
@@ -22,8 +23,8 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
-        logging.FileHandler(LOG_PATH),   # Log to file
-        logging.StreamHandler()          # Log to console
+        logging.FileHandler(LOG_PATH),
+        logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
@@ -38,7 +39,7 @@ def log_request_info():
 
 @app.after_request
 def log_response_info(response):
-    logger.info(f" Responded with {response.status} for {request.path}")
+    logger.info(f"📤 Responded with {response.status} for {request.path}")
     return response
 
 # ------------------- NLTK Setup -------------------
@@ -59,7 +60,7 @@ lemmatizer = WordNetLemmatizer()
 splitter = RegexpTokenizer(r'\w+')
 synonym_cache = {}
 
-# ------------------- Path Configuration (Linux-Compatible) -------------------
+# ------------------- Path Configuration -------------------
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "Dataset"
 DATA_DIR.mkdir(exist_ok=True)
@@ -80,9 +81,12 @@ def synonyms(term):
     synonym_cache[term] = synonym_set
     return synonym_set
 
-# ------------------- Helper: Train + Save Model -------------------
+# ------------------- Model Training -------------------
 def train_and_save_model():
     """Retrain model from dataset and save updated .pkl files."""
+    start_time = time.time()
+    logger.info("🔁 Retraining model started...")
+
     if not DATA_PATH.exists():
         raise FileNotFoundError(f"Dataset not found at {DATA_PATH}")
 
@@ -94,14 +98,34 @@ def train_and_save_model():
     encoder = LabelEncoder()
     Y_encoded = encoder.fit_transform(Y)
 
-    model = LogisticRegression(max_iter=200)
+    model = LogisticRegression(max_iter=200, n_jobs=-1)
     model.fit(X, Y_encoded)
 
     joblib.dump(model, MODEL_PATH)
     joblib.dump(encoder, ENCODER_PATH)
 
-    logger.info(" Model retrained and saved successfully.")
+    duration = round(time.time() - start_time, 2)
+    logger.info(f" Model retrained successfully in {duration}s.")
+
     return model, encoder, list(X.columns)
+
+# ------------------- Background Retraining -------------------
+retraining_lock = threading.Lock()
+is_retraining = False
+
+def retrain_in_background():
+    """Background thread for retraining the model."""
+    global lr_model, encoder, dataset_symptoms, is_retraining
+    try:
+        logger.info("🧵 Background retraining thread started.")
+        new_model, new_encoder, new_symptoms = train_and_save_model()
+        with retraining_lock:
+            lr_model, encoder, dataset_symptoms = new_model, new_encoder, new_symptoms
+        logger.info(" Background retraining completed and model updated in memory.")
+    except Exception as e:
+        logger.exception(f"❌ Retraining failed: {e}")
+    finally:
+        is_retraining = False
 
 # ------------------- Initial Load -------------------
 if MODEL_PATH.exists() and ENCODER_PATH.exists() and DATA_PATH.exists():
@@ -152,7 +176,7 @@ def predict():
         if val in dataset_symptoms:
             sample_x[dataset_symptoms.index(val)] = 1
 
-    # Step 5: Predict top 5 diseases with normalized probabilities
+    # Step 5: Predict top 5 diseases
     prediction = lr_model.predict_proba([sample_x])[0]
     k = 5
     diseases = encoder.classes_
@@ -167,11 +191,11 @@ def predict():
     logger.info(f" Predicted diseases: {topk_dict}")
     return jsonify({"predictions": topk_dict})
 
-# ------------------- Receive + Retrain Endpoint -------------------
+# ------------------- Receive + Async Retrain Endpoint -------------------
 @app.route('/receive', methods=['POST'])
 def receive_data():
     data = request.json
-    logger.info(f" Received new training data: {data}")
+    logger.info(f"📩 Received new training data: {data}")
 
     symptoms = data.get("symptoms", [])
     doctor_diseases = data.get("final_diagnosis_by_doctor", [])
@@ -185,14 +209,13 @@ def receive_data():
     else:
         df = pd.DataFrame(columns=['label_dis'])
 
-    # Normalize symptoms
+    # Normalize symptom names
     def normalize_symptom(sym):
-        sym = sym.strip().lower().replace('-', '_').replace(' ', '_').replace("'", "")
-        return sym
+        return sym.strip().lower().replace('-', '_').replace(' ', '_').replace("'", "")
 
     normalized_symptoms = [normalize_symptom(s) for s in symptoms]
 
-    # Ensure columns exist
+    # Ensure all columns exist
     for symptom in normalized_symptoms:
         if symptom not in df.columns:
             if "label_dis" in df.columns:
@@ -216,22 +239,27 @@ def receive_data():
 
     df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
 
-    # Save safely
+    # Safe save
     temp_path = DATA_PATH.with_suffix(".csv.tmp")
     df.to_csv(temp_path, index=False, encoding='latin1')
     os.replace(temp_path, DATA_PATH)
 
-    # Retrain model
-    global lr_model, encoder, dataset_symptoms
-    lr_model, encoder, dataset_symptoms = train_and_save_model()
+    # Start background retraining
+    global is_retraining
+    if not is_retraining:
+        is_retraining = True
+        thread = threading.Thread(target=retrain_in_background, daemon=True)
+        thread.start()
+        logger.info(" Retraining triggered in background thread.")
+    else:
+        logger.info(" Retraining already in progress — new data queued for next cycle.")
 
     return jsonify({
-        "status": "success",
+        "status": "accepted",
         "rows_added": len(new_rows),
         "normalized_symptoms": normalized_symptoms,
-        "received_data": data,
-        "message": "Dataset updated and model retrained successfully."
-    })
+        "message": "Data saved. Model retraining in background."
+    }), 202
 
 # ------------------- Health Check -------------------
 @app.route('/', methods=['GET'])

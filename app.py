@@ -227,18 +227,53 @@ def receive_data():
     if "label_dis" not in df.columns:
         df["label_dis"] = ""
 
-    # Add new rows
+    # ------------------ Normalize Disease Names ------------------
+    def normalize_disease_name(disease):
+        """
+        Clean and normalize disease name into a consistent 'Title Case' format.
+        Handles mixed cases, underscores, punctuation, numbers, and extra spaces.
+        Example:
+          "__CHICKEN-pox_19" -> "Chicken Pox 19"
+          "covid-19" -> "Covid 19"
+          "  malaria!! " -> "Malaria"
+        """
+        if not isinstance(disease, str):
+            return "Unknown"
+
+        # Remove leading/trailing spaces
+        clean = disease.strip()
+
+        # Remove unwanted characters: underscores, dashes, equals, punctuations, etc.
+        clean = re.sub(r"[_\-=\+*/\\,.;:!?@#%^&(){}[\]<>~`|]", " ", clean)
+
+        # Replace multiple spaces with single space
+        clean = re.sub(r"\s+", " ", clean)
+
+        # Remove non-alphanumeric characters except spaces (for safety)
+        clean = re.sub(r"[^a-zA-Z0-9 ]", "", clean)
+
+        # Convert to lowercase first, then title case for readability
+        clean = clean.lower().title()
+
+        # Extra cleanup — remove accidental double spaces
+        clean = re.sub(r"\s+", " ", clean).strip()
+
+        return clean if clean else "Unknown"
+
+    # ------------------ Add New Rows (Allow Duplicates) ------------------
     new_rows = []
     for disease in doctor_diseases:
+        normalized_disease = normalize_disease_name(disease)
+
         new_row = {col: 0 for col in df.columns}
         for symptom in normalized_symptoms:
             if symptom in df.columns:
                 new_row[symptom] = 1
-        new_row["label_dis"] = disease
+        new_row["label_dis"] = normalized_disease
         new_rows.append(new_row)
 
+    # Append all rows (duplicates allowed)
     df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
-
     # Safe save
     temp_path = DATA_PATH.with_suffix(".csv.tmp")
     df.to_csv(temp_path, index=False, encoding='latin1')

@@ -85,7 +85,7 @@ def synonyms(term):
 def train_and_save_model():
     """Retrain model from dataset and save updated .pkl files."""
     start_time = time.time()
-    logger.info("🔁 Retraining model started...")
+    logger.info(" Retraining model started...")
 
     if not DATA_PATH.exists():
         raise FileNotFoundError(f"Dataset not found at {DATA_PATH}")
@@ -117,13 +117,13 @@ def retrain_in_background():
     """Background thread for retraining the model."""
     global lr_model, encoder, dataset_symptoms, is_retraining
     try:
-        logger.info("🧵 Background retraining thread started.")
+        logger.info(" Background retraining thread started.")
         new_model, new_encoder, new_symptoms = train_and_save_model()
         with retraining_lock:
             lr_model, encoder, dataset_symptoms = new_model, new_encoder, new_symptoms
         logger.info(" Background retraining completed and model updated in memory.")
     except Exception as e:
-        logger.exception(f"❌ Retraining failed: {e}")
+        logger.exception(f" Retraining failed: {e}")
     finally:
         is_retraining = False
 
@@ -195,7 +195,7 @@ def predict():
 @app.route('/receive', methods=['POST'])
 def receive_data():
     data = request.json
-    logger.info(f"📩 Received new training data: {data}")
+    logger.info(f" Received new training data: {data}")
 
     symptoms = data.get("symptoms", [])
     doctor_diseases = data.get("final_diagnosis_by_doctor", [])

@@ -40,7 +40,7 @@ def log_request_info():
 
 @app.after_request
 def log_response_info(response):
-    logger.info(f"📤 Responded with {response.status} for {request.path}")
+    logger.info(f" Responded with {response.status} for {request.path}")
     return response
 
 # ------------------- NLTK Setup -------------------

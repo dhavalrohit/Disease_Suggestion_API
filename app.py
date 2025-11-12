@@ -192,7 +192,9 @@ def predict():
     total_prob = sum(topk_probs)
     normalized_probs = (topk_probs / total_prob * 100) if total_prob > 0 else [0] * len(topk_probs)
     boosted_probs = [round((p * 0.9) + 10, 2) if p < 90 else round(p, 2) for p in normalized_probs]
-    topk_dict = {diseases[t]: prob for t, prob in zip(topk, boosted_probs)}
+    
+    #topk_dict = {diseases[t]: prob for t, prob in zip(topk, boosted_probs)}
+    topk_dict = {diseases[t]: float(prob) for t, prob in zip(topk, boosted_probs)}
 
     logger.info(f" Predicted diseases: {topk_dict}")
     return jsonify({"predictions": topk_dict})

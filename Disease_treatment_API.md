@@ -180,5 +180,8 @@ tmux attach -t disease_treatment_app
 
 ### Stop the app
 Reattach (tmux attach -t disease_treatment_app)
+
 Press Ctrl + C to stop
+
 Type exit to close tmux
+

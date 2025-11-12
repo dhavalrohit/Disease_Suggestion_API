@@ -28,6 +28,7 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
+logging.Formatter.converter = time.localtime
 logger = logging.getLogger(__name__)
 
 @app.before_request

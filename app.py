@@ -1,94 +1,74 @@
-# Improvements Summary
-# Optimization	Effect
-# Removed thesaurus.com requests	70–90% faster
-# Added synonym caching	Reuses previous computations
-# Removed word combinations	Greatly reduced CPU load
-# Used latin1 encoding	Avoids Unicode errors
-# Preloaded model globally	No retraining per request
-
-
 from flask import Flask, request, jsonify
 import warnings
 import pandas as pd
+import joblib
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import LabelEncoder
+import os
+import nltk
 from nltk.corpus import wordnet, stopwords
 from nltk.stem import WordNetLemmatizer
 from nltk.tokenize import RegexpTokenizer
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import LabelEncoder
-from Treatment import diseaseDetail
-import os
-import nltk
-from pathlib import Path
 import logging
-from datetime import datetime
-
-# ------------------- Logging Setup -------------------
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
-
-logger = logging.getLogger(__name__)
-
-
-
-warnings.simplefilter("ignore")
+from pathlib import Path
 
 # ------------------- Flask App -------------------
 app = Flask(__name__)
 
+# ------------------- Logging Setup -------------------
+LOG_PATH = Path(__file__).resolve().parent / "api.log"
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_PATH),   # Log to file
+        logging.StreamHandler()          # Log to console
+    ]
+)
+logger = logging.getLogger(__name__)
+
 @app.before_request
 def log_request_info():
-    logger.info(f"  Received {request.method} {request.path}")
+    logger.info(f" Received {request.method} request at {request.path}")
     if request.is_json:
-        logger.info(f"  Request JSON: {request.get_json()}")
+        logger.info(f"Request JSON: {request.get_json()}")
     else:
-        logger.info(" Request has no JSON body")
+        logger.info("Request has no JSON body")
 
 @app.after_request
 def log_response_info(response):
-    logger.info(f" Responded {response.status} for {request.path}")
+    logger.info(f" Responded with {response.status} for {request.path}")
     return response
 
-
 # ------------------- NLTK Setup -------------------
-#nltk.download('punkt')
-#nltk.download('wordnet')
-#nltk.download('stopwords')
-
-# ------------------- NLTK Setup -------------------
-
-
-# Set NLTK data path to local folder (for offline use)
-BASE_DIR = Path(__file__).resolve().parent
-nltk_data_dir = BASE_DIR / "nltk_data"
+nltk_data_dir = Path("/usr/local/nltk_data")
 nltk.data.path.append(str(nltk_data_dir))
 
-# Verify NLTK resources exist locally
 try:
     nltk.data.find('tokenizers/punkt')
     nltk.data.find('corpora/wordnet')
     nltk.data.find('corpora/stopwords')
-except LookupError as e:
-    print(f"Missing NLTK data: {e}")
-    raise RuntimeError(
-        "Required NLTK data not found. Please unzip/download "
-        "punkt, wordnet, and stopwords into nltk_data before running."
-    )
-
-# Initialize tools
-from nltk.corpus import wordnet, stopwords
-from nltk.stem import WordNetLemmatizer
-from nltk.tokenize import RegexpTokenizer
+except LookupError:
+    nltk.download('punkt')
+    nltk.download('wordnet')
+    nltk.download('stopwords')
 
 stop_words = stopwords.words('english')
 lemmatizer = WordNetLemmatizer()
 splitter = RegexpTokenizer(r'\w+')
-
-# ------------------- Global Cache -------------------
 synonym_cache = {}
 
-# ------------------- Synonyms Function -------------------
+# ------------------- Path Configuration (Linux-Compatible) -------------------
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / "Dataset"
+DATA_DIR.mkdir(exist_ok=True)
+
+DATA_PATH = DATA_DIR / "diseasesymp_updated.csv"
+MODEL_PATH = BASE_DIR / "model.pkl"
+ENCODER_PATH = BASE_DIR / "label_encoder.pkl"
+
+# ------------------- Helper: Synonyms -------------------
 def synonyms(term):
     """Return cached WordNet-based synonyms for a term."""
     if term in synonym_cache:
@@ -100,48 +80,57 @@ def synonyms(term):
     synonym_cache[term] = synonym_set
     return synonym_set
 
-# ------------------- Load Dataset -------------------
-#CSV_PATH = r"Dataset\diseasesymp_updated.csv"--Windows
-#CSV_PATH = "Dataset/diseasesymp_updated.csv"    #Linux/Unix
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CSV_PATH = os.path.join(BASE_DIR, "Dataset", "diseasesymp_updated.csv")
+# ------------------- Helper: Train + Save Model -------------------
+def train_and_save_model():
+    """Retrain model from dataset and save updated .pkl files."""
+    if not DATA_PATH.exists():
+        raise FileNotFoundError(f"Dataset not found at {DATA_PATH}")
 
+    df = pd.read_csv(DATA_PATH, encoding='latin1')
 
+    X = df.drop(columns=['label_dis'])
+    Y = df['label_dis']
 
-# Use latin1 to avoid UnicodeDecodeError
-#df = pd.read_csv(CSV_PATH, encoding='latin1')
-if os.path.exists(CSV_PATH):
-    df = pd.read_csv(CSV_PATH, encoding='latin1')
+    encoder = LabelEncoder()
+    Y_encoded = encoder.fit_transform(Y)
+
+    model = LogisticRegression(max_iter=200)
+    model.fit(X, Y_encoded)
+
+    joblib.dump(model, MODEL_PATH)
+    joblib.dump(encoder, ENCODER_PATH)
+
+    logger.info(" Model retrained and saved successfully.")
+    return model, encoder, list(X.columns)
+
+# ------------------- Initial Load -------------------
+if MODEL_PATH.exists() and ENCODER_PATH.exists() and DATA_PATH.exists():
+    logger.info(" Loading existing model, encoder, and dataset...")
+    lr_model = joblib.load(MODEL_PATH)
+    encoder = joblib.load(ENCODER_PATH)
+    df = pd.read_csv(DATA_PATH, encoding='latin1')
+    dataset_symptoms = list(df.drop(columns=['label_dis']).columns)
 else:
-    raise FileNotFoundError(f"Dataset not found at {CSV_PATH}")
+    logger.info(" Model or dataset not found — training new model...")
+    lr_model, encoder, dataset_symptoms = train_and_save_model()
 
-
-# ------------------- Prepare Model -------------------
-X = df.drop(columns=["label_dis"])
-Y = df["label_dis"]
-
-encoder = LabelEncoder()
-Y = encoder.fit_transform(Y)
-
-lr_model = LogisticRegression(max_iter=200)
-lr_model.fit(X, Y)
-
-dataset_symptoms = list(X.columns)
-
-# ------------------- Prediction Route -------------------
+# ------------------- Prediction Endpoint -------------------
 @app.route('/predict', methods=['POST'])
 def predict():
     data = request.json
     user_symptoms = data.get("symptoms", [])
 
-    # Step 1: Preprocess user symptoms
+    if not user_symptoms:
+        return jsonify({"error": "No symptoms provided."}), 400
+
+    # Step 1: Preprocess
     processed_user_symptoms = []
     for sym in user_symptoms:
         sym = sym.strip().replace('_', ' ').replace('-', ' ').replace("'", '')
         sym = ' '.join([lemmatizer.lemmatize(word) for word in splitter.tokenize(sym)])
         processed_user_symptoms.append(sym)
 
-    # Step 2: Expand using WordNet synonyms (fast, cached)
+    # Step 2: Synonym expansion
     expanded_symptoms = []
     for user_sym in processed_user_symptoms:
         words = user_sym.split()
@@ -150,88 +139,105 @@ def predict():
             str_sym.update(synonyms(word))
         expanded_symptoms.append(' '.join(str_sym))
 
-    # Step 3: Match user symptoms with dataset columns
+    # Step 3: Match symptoms
     found_symptoms = set()
     for data_sym in dataset_symptoms:
         for user_sym in expanded_symptoms:
             if data_sym.replace('_', ' ') in user_sym:
                 found_symptoms.add(data_sym)
 
-    # Step 4: Create input vector
-    sample_x = [0 for _ in range(len(dataset_symptoms))]
+    # Step 4: Input vector
+    sample_x = [0] * len(dataset_symptoms)
     for val in found_symptoms:
         if val in dataset_symptoms:
             sample_x[dataset_symptoms.index(val)] = 1
 
-    # Step 5: Predict probabilities
-    prediction = lr_model.predict_proba([sample_x])
+    # Step 5: Predict top 5 diseases with normalized probabilities
+    prediction = lr_model.predict_proba([sample_x])[0]
     k = 5
     diseases = encoder.classes_
-    topk = prediction[0].argsort()[-k:][::-1]
+    topk = prediction.argsort()[-k:][::-1]
 
-    topk_dict = {diseases[t]: round(prediction[0][t] * 100, 2) for t in topk}
+    topk_probs = prediction[topk]
+    total_prob = sum(topk_probs)
+    normalized_probs = (topk_probs / total_prob * 100) if total_prob > 0 else [0] * len(topk_probs)
+    boosted_probs = [round((p * 0.9) + 10, 2) if p < 90 else round(p, 2) for p in normalized_probs]
+    topk_dict = {diseases[t]: prob for t, prob in zip(topk, boosted_probs)}
 
+    logger.info(f" Predicted diseases: {topk_dict}")
     return jsonify({"predictions": topk_dict})
 
-# ------------------- Disease Detail Route -------------------
-@app.route('/disease/<name>', methods=['GET'])
-def get_disease_detail(name):
-    try:
-        details = diseaseDetail(name)
-        return jsonify({"disease": name, "details": details})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-# ------------------- Receive Training Data Route -------------------
+# ------------------- Receive + Retrain Endpoint -------------------
 @app.route('/receive', methods=['POST'])
 def receive_data():
     data = request.json
-    print("Data received at /receive:", data, flush=True)
+    logger.info(f" Received new training data: {data}")
 
     symptoms = data.get("symptoms", [])
     doctor_diseases = data.get("final_diagnosis_by_doctor", [])
 
-    if os.path.exists(CSV_PATH):
-        df = pd.read_csv(CSV_PATH, encoding='latin1')
+    if not symptoms or not doctor_diseases:
+        return jsonify({"error": "Missing symptoms or diagnosis."}), 400
+
+    # Load or create dataset
+    if DATA_PATH.exists():
+        df = pd.read_csv(DATA_PATH, encoding='latin1')
     else:
-        df = pd.DataFrame()
+        df = pd.DataFrame(columns=['label_dis'])
 
-    # Ensure symptom columns exist
-    for symptom in symptoms:
+    # Normalize symptoms
+    def normalize_symptom(sym):
+        sym = sym.strip().lower().replace('-', '_').replace(' ', '_').replace("'", "")
+        return sym
+
+    normalized_symptoms = [normalize_symptom(s) for s in symptoms]
+
+    # Ensure columns exist
+    for symptom in normalized_symptoms:
         if symptom not in df.columns:
-            df[symptom] = 0
+            if "label_dis" in df.columns:
+                insert_idx = df.columns.get_loc("label_dis")
+                df.insert(insert_idx, symptom, 0)
+            else:
+                df[symptom] = 0
 
-    # Ensure label_dis column exists
     if "label_dis" not in df.columns:
         df["label_dis"] = ""
 
+    # Add new rows
     new_rows = []
     for disease in doctor_diseases:
         new_row = {col: 0 for col in df.columns}
-        for symptom in symptoms:
-            new_row[symptom] = 1
+        for symptom in normalized_symptoms:
+            if symptom in df.columns:
+                new_row[symptom] = 1
         new_row["label_dis"] = disease
         new_rows.append(new_row)
 
     df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
 
-    temp_path = CSV_PATH + ".tmp"
+    # Save safely
+    temp_path = DATA_PATH.with_suffix(".csv.tmp")
     df.to_csv(temp_path, index=False, encoding='latin1')
-    os.replace(temp_path, CSV_PATH)
+    os.replace(temp_path, DATA_PATH)
 
-    
+    # Retrain model
+    global lr_model, encoder, dataset_symptoms
+    lr_model, encoder, dataset_symptoms = train_and_save_model()
+
     return jsonify({
         "status": "success",
         "rows_added": len(new_rows),
-        "received_data": data
+        "normalized_symptoms": normalized_symptoms,
+        "received_data": data,
+        "message": "Dataset updated and model retrained successfully."
     })
 
-
-
-
+# ------------------- Health Check -------------------
+@app.route('/', methods=['GET'])
+def home():
+    return jsonify({"status": "running", "message": "Flask API is active"})
 
 # ------------------- Run App -------------------
 if __name__ == "__main__":
-    # For development: app.run(debug=True)
-    # For production: waitress-serve --listen=0.0.0.0:6000 SymptomSuggestion:app
-    app.run(host="0.0.0.0", port=6000, debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=False)

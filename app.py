@@ -19,7 +19,7 @@ app = Flask(__name__)
 
 # ------------------- Logging Setup -------------------
 LOG_PATH = Path(__file__).resolve().parent / "api.log"
-
+logging.Formatter.converter = time.localtime
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -28,7 +28,7 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
-logging.Formatter.converter = time.localtime
+
 logger = logging.getLogger(__name__)
 
 @app.before_request

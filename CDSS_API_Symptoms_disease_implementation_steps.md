@@ -1,8 +1,8 @@
 ## Following Changes to make in existing Code
 
-### 1.Open application\views\admin\patient\appointment.php and add following lines:
+### Step 1:Open application\views\admin\patient\appointment.php and add following lines:
 
-#### Javascript Section:Add the following lines at the end after closing script (</script) tag OR can be added under exisiting Script Section:
+####  Javascript Section:Add the following lines at the end after closing script (</script) tag OR can be added under exisiting Script Section:
 ```
 <!-- Added By Raushan For Symptoms Selection Using DropDown -->
 
@@ -41,7 +41,7 @@
 </script>
 ```
 
-#### CSS/Style Sction:Add the following lines after existing closing style (/style) tag OR can be added under existing style section:
+####  CSS/Style Sction:Add the following lines after existing closing style (/style) tag OR can be added under existing style section:
 ```
 <style>
 .tagify__tag {
@@ -72,4 +72,16 @@
 
 </style>
 ```
+### Step 2:In application\views\admin\patient\appointment.php  add ID to symptoms textarea element:
+
+#### Search for "lang->line('chief_complaint')" below this line we will find following textarea declaration:
+```
+<textarea style="height: 28px;" name="symptoms" class="form-control" ><?php echo set_value('address'); ?></textarea>
+```
+#### Change this to:
+```
+<textarea id="chiefcomplaint"  style="height: 28px;" name="symptoms" class="form-control" ><?php echo set_value('address'); ?></textarea>
+```
+
+
  
